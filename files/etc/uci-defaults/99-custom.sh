@@ -36,14 +36,22 @@ ifnames=$(echo "$ifnames" | awk '{$1=$1};1')
 
 # 网络设置
 if [ "$count" -eq 1 ]; then
-    # 单网口设备 类似于NAS模式 动态获取ip模式 具体ip地址取决于上一级路由器给它分配的ip 也方便后续你使用web页面设置旁路由
-    # 单网口设备 不支持修改ip 不要在此处修改ip 单网口采用dhcp模式 删除默认的192.168.1.1
-    uci set network.lan.proto='dhcp'
-    uci delete network.lan.ipaddr
-    uci delete network.lan.netmask
-    uci delete network.lan.gateway     
-    uci delete network.lan.dns 
+    # 单网口设备 设置为静态 IP 模式
+    uci set network.lan.proto='static'
+    uci set network.lan.ipaddr='192.168.50.5'
+    uci set network.lan.netmask='255.255.255.0'
+    uci set network.lan.gateway='192.168.50.1'
+    uci set network.lan.dns='192.168.50.1'
     uci commit network
+    echo "Single NIC device: set static IP 192.168.50.5 with GW 192.168.50.1 and DNS at $(date)" >>$LOGFILE
+
+    # 设置 DHCP 服务（防止默认未启用）
+    uci set dhcp.lan.interface='lan'
+    uci set dhcp.lan.start='100'
+    uci set dhcp.lan.limit='150'
+    uci set dhcp.lan.leasetime='12h'
+    uci commit dhcp
+    echo "DHCP server enabled on LAN interface (range: 192.168.50.100 ~ .249) at $(date)" >>$LOGFILE
 elif [ "$count" -gt 1 ]; then
     # 提取第一个接口作为WAN
     wan_ifname=$(echo "$ifnames" | awk '{print $1}')
@@ -78,9 +86,9 @@ elif [ "$count" -gt 1 ]; then
     # 大家不能胡乱修改哦 比如有人修改为192.168.100.55 这是错误的理解 这个项目不能提前设置旁路地址
     # 旁路的设置分2类情况,情况一是单网口的设备,默认是DHCP模式，ip应该在上一级路由器里查看。之后进入web页在设置旁路。
     # 情况二旁路由如果是多网口设备，也应当用网关访问网页后，在自行在web网页里设置。总之大家不能直接在代码里修改旁路网关。千万不要徒增bug啦。
-    uci set network.lan.ipaddr='192.168.100.1'
+    uci set network.lan.ipaddr='192.168.50.5'
     uci set network.lan.netmask='255.255.255.0'
-    echo "set 192.168.100.1 at $(date)" >>$LOGFILE
+    echo "set 192.168.50.5 at $(date)" >>$LOGFILE
     # 判断是否启用 PPPoE
     echo "print enable_pppoe value=== $enable_pppoe" >>$LOGFILE
     if [ "$enable_pppoe" = "yes" ]; then
