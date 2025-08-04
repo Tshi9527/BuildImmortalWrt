@@ -41,5 +41,5 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-appfilter"
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-appfilter-zh-cn"
 # 设置向导 by sirpdboy
-#CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-netwizard"
-#CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-netwizard-zh-cn"
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-netwizard"
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-netwizard-zh-cn"
