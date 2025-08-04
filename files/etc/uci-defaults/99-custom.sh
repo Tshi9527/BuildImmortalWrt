@@ -1,26 +1,28 @@
 #!/bin/sh
-# 99-custom.sh 就是immortalwrt固件首次启动时运行的脚本 位于固件内的/etc/uci-defaults/99-custom.sh
-# Log file for debugging
+# 99-custom.sh - ImmortalWrt首次启动运行脚本
+# 作用：配置网络、防火墙、Docker防火墙规则，设置主机名映射，SSH与Web终端访问，修改固件描述等
+
 LOGFILE="/tmp/uci-defaults-log.txt"
-echo "Starting 99-custom.sh at $(date)" >>$LOGFILE
-# 设置默认防火墙规则，方便虚拟机首次访问 WebUI
+echo "Starting 99-custom.sh at $(date)" >> $LOGFILE
+
+# 1. 设置默认防火墙规则，方便虚拟机首次访问 WebUI
 uci set firewall.@zone[1].input='ACCEPT'
 
-# 设置主机名映射，解决安卓原生 TV 无法联网的问题
+# 2. 设置主机名映射，解决安卓原生 TV 无法联网的问题
 uci add dhcp domain
 uci set "dhcp.@domain[-1].name=time.android.com"
 uci set "dhcp.@domain[-1].ip=203.107.6.88"
+uci commit dhcp
 
-# 检查配置文件pppoe-settings是否存在 该文件由build.sh动态生成
+# 3. 读取 pppoe-settings 配置文件（如果存在）
 SETTINGS_FILE="/etc/config/pppoe-settings"
 if [ ! -f "$SETTINGS_FILE" ]; then
-    echo "PPPoE settings file not found. Skipping." >>$LOGFILE
+    echo "PPPoE settings file not found. Skipping." >> $LOGFILE
 else
-    # 读取pppoe信息($enable_pppoe、$pppoe_account、$pppoe_password)
     . "$SETTINGS_FILE"
 fi
 
-# 计算网卡数量和网口列表
+# 4. 计算物理网口数量及名称，筛选 eth 或 en 开头的接口
 count=0
 ifnames=""
 for iface in /sys/class/net/*; do
@@ -30,9 +32,10 @@ for iface in /sys/class/net/*; do
         ifnames="$ifnames $iface_name"
     fi
 done
+# 去除多余空格
 ifnames=$(echo "$ifnames" | awk '{$1=$1};1')
 
-# 直接固定用第一个物理接口作为LAN，配置静态IP
+# 5. 以第一个物理接口为 LAN，设置静态 IP 地址
 main_iface=$(echo "$ifnames" | awk '{print $1}')
 uci set network.lan.device="$main_iface"
 uci set network.lan.proto='static'
@@ -42,43 +45,38 @@ uci set network.lan.gateway='192.168.50.1'
 uci set network.lan.dns='192.168.50.1'
 uci commit network
 
-# 设置 DHCP 服务
+# 6. 配置 DHCP 服务
 uci set dhcp.lan.interface='lan'
 uci set dhcp.lan.start='100'
 uci set dhcp.lan.limit='150'
 uci set dhcp.lan.leasetime='12h'
 uci commit dhcp
 
-# 若安装了dockerd 则设置docker的防火墙规则
-# 扩大docker涵盖的子网范围 '172.16.0.0/12'
-# 方便各类docker容器的端口顺利通过防火墙 
+# 7. 如果安装了 Docker，则配置对应的防火墙规则，扩大子网范围方便容器访问
 if command -v dockerd >/dev/null 2>&1; then
-    echo "检测到 Docker，正在配置防火墙规则..."
-    FW_FILE="/etc/config/firewall"
+    echo "检测到 Docker，正在配置防火墙规则..." >> $LOGFILE
 
-    # 删除所有名为 docker 的 zone
-    uci delete firewall.docker
+    # 删除原有名为 docker 的防火墙 zone
+    uci delete firewall.docker 2>/dev/null
 
-    # 先获取所有 forwarding 索引，倒序排列删除
+    # 删除所有涉及 docker zone 的 forwarding 规则
     for idx in $(uci show firewall | grep "=forwarding" | cut -d[ -f2 | cut -d] -f1 | sort -rn); do
         src=$(uci get firewall.@forwarding[$idx].src 2>/dev/null)
         dest=$(uci get firewall.@forwarding[$idx].dest 2>/dev/null)
-        echo "Checking forwarding index $idx: src=$src dest=$dest"
         if [ "$src" = "docker" ] || [ "$dest" = "docker" ]; then
-            echo "Deleting forwarding @forwarding[$idx]"
             uci delete firewall.@forwarding[$idx]
         fi
     done
-    # 提交删除
     uci commit firewall
-    # 追加新的 zone + forwarding 配置
-    cat <<EOF >>"$FW_FILE"
+
+    # 追加 docker zone 及转发配置
+    cat <<EOF >> /etc/config/firewall
 
 config zone 'docker'
+  option name 'docker'
   option input 'ACCEPT'
   option output 'ACCEPT'
   option forward 'ACCEPT'
-  option name 'docker'
   list subnet '172.16.0.0/12'
 
 config forwarding
@@ -94,20 +92,29 @@ config forwarding
   option dest 'docker'
 EOF
 
+    /etc/init.d/firewall reload
 else
-    echo "未检测到 Docker，跳过防火墙配置。"
+    echo "未检测到 Docker，跳过防火墙配置。" >> $LOGFILE
 fi
 
-# 设置所有网口可访问网页终端
+# 8. 设置所有网口可访问网页终端（ttyd）
 uci delete ttyd.@ttyd[0].interface
+uci commit ttyd
+/etc/init.d/ttyd restart
 
-# 设置所有网口可连接 SSH
+# 9. 设置所有网口可连接 SSH（dropbear）
 uci set dropbear.@dropbear[0].Interface=''
-uci commit
+uci commit dropbear
+/etc/init.d/dropbear restart
 
-# 设置编译作者信息
+# 10. 备份并修改固件描述信息
 FILE_PATH="/etc/openwrt_release"
 NEW_DESCRIPTION="Packaged by wukongdaily"
-sed -i "s/DISTRIB_DESCRIPTION='[^']*'/DISTRIB_DESCRIPTION='$NEW_DESCRIPTION'/" "$FILE_PATH"
+if [ -f "$FILE_PATH" ]; then
+    cp "$FILE_PATH" "${FILE_PATH}.bak"
+    sed -i "s/DISTRIB_DESCRIPTION='[^']*'/DISTRIB_DESCRIPTION='$NEW_DESCRIPTION'/" "$FILE_PATH"
+fi
+
+echo "99-custom.sh 脚本执行完成于 $(date)" >> $LOGFILE
 
 exit 0
