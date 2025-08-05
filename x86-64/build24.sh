@@ -64,9 +64,9 @@ PACKAGES="$PACKAGES luci-i18n-zerotier-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-ddns-go-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-upnp-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-timewol-zh-cn"
-PACKAGES="$PACKAGES luci-app-syncdial"
-PACKAGES="$PACKAGES luci-i18n-mwan3-zh-cn"
-PACKAGES="$PACKAGES luci-i18n-arpbind-zh-cn"
+#PACKAGES="$PACKAGES luci-app-syncdial"
+PACKAGES="$PACKAGES luci-i18n-uhttpd-zh-cn"
+#PACKAGES="$PACKAGES luci-i18n-arpbind-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-appfilter-zh-cn"
 
 # 文件管理器
